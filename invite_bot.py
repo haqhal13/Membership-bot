@@ -1,15 +1,16 @@
-import requests
 import logging
 from flask import Flask, request, jsonify
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, CallbackContext
+import requests
 import threading
+import os
 
 # ---- Configuration ----
-BOT_TOKEN = "7559019704:AAEgnG14Nkm-x4_9K3m4HXSitCSrd2RdsaE"
-ADMIN_ID = 7618426591  # Admin's Telegram user ID
-GROUP_ID = -1002317604959  # Group ID to track new members
-WEBHOOK_URL_INFO = "https://hook.eu2.make.com/jj5f9zweffha9j8q2cfar2ri1s85bdar"  # Webhook for member info
+BOT_TOKEN = os.getenv("BOT_TOKEN", "7559019704:AAEgnG14Nkm-x4_9K3m4HXSitCSrd2RdsaE")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://your-bot-render-url.onrender.com")  # Replace with your bot's Render URL
+ADMIN_ID = int(os.getenv("ADMIN_ID", 7618426591))  # Admin's Telegram user ID
+GROUP_ID = int(os.getenv("GROUP_ID", -1002317604959))  # Group ID to track new members
 
 # In-memory invite link storage
 invite_links = {}
@@ -24,11 +25,21 @@ logger = logging.getLogger("bot")
 # Flask app for webhook listener
 app = Flask(__name__)
 
+# ---- Flask Route: Health Check ----
+@app.route("/")
+def health_check():
+    """
+    Health check endpoint to confirm the server is running.
+    """
+    logger.info("[INFO] Health check request received.")
+    return "Bot and webhook are running!", 200
+
+
 # ---- Flask Route: Webhook for Adding Invite Links ----
 @app.route('/register_invite', methods=['POST'])
 def register_invite_webhook():
     """
-    Webhook endpoint for registering invite links via an external service.
+    Webhook endpoint for registering invite links.
     """
     logger.debug("[DEBUG] Received request on /register_invite endpoint.")
     try:
@@ -80,30 +91,6 @@ async def list_invites(update: Update, context: CallbackContext):
             [f"{link} - {'Used' if used else 'Unused'}" for link, used in invite_links.items()]
         )
         await update.message.reply_text(f"📜 Registered Invite Links:\n{links_list}")
-
-
-# ---- Command: /register_invite ----
-async def register_invite(update: Update, context: CallbackContext):
-    """
-    Command to register a new invite link manually.
-    """
-    logger.debug("[DEBUG] /register_invite command triggered.")
-    if len(context.args) < 1:
-        await update.message.reply_text("❌ Usage: /register_invite <invite_link>")
-        return
-
-    invite_link = context.args[0]
-    if not invite_link.startswith("https://t.me/"):
-        await update.message.reply_text("❌ Invalid invite link. Must start with 'https://t.me/'.")
-        return
-
-    if invite_link in invite_links:
-        await update.message.reply_text(f"❌ This invite link is already registered: {invite_link}")
-    else:
-        invite_links[invite_link] = False  # Mark as unused
-        await update.message.reply_text(f"✅ Invite link registered: {invite_link}")
-        logger.info(f"[INFO] Invite link registered via /register_invite: {invite_link}")
-        logger.debug(f"[DEBUG] Updated invite_links state: {invite_links}")
 
 
 # ---- Handle New Members ----
@@ -158,7 +145,7 @@ async def unknown(update: Update, context: CallbackContext):
     Handle unknown commands.
     """
     logger.debug("[DEBUG] Unknown command received.")
-    await update.message.reply_text("❌ Unknown command. Use /start, /list_invites, or /register_invite.")
+    await update.message.reply_text("❌ Unknown command. Use /start or /list_invites.")
 
 
 # ---- Main Function ----
@@ -168,7 +155,7 @@ def main():
     """
     logger.info("[INFO] Starting the bot and webhook server...")
 
-    # Start Flask app on port 5000
+    # Start Flask app on a separate thread
     flask_thread = threading.Thread(target=lambda: app.run(host="0.0.0.0", port=5000))
     flask_thread.start()
 
@@ -178,10 +165,14 @@ def main():
     # Add command handlers
     app_bot.add_handler(CommandHandler("start", start))
     app_bot.add_handler(CommandHandler("list_invites", list_invites))
-    app_bot.add_handler(CommandHandler("register_invite", register_invite))
     app_bot.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, new_member))
     app_bot.add_handler(MessageHandler(filters.COMMAND, unknown))
 
+    # Set webhook
+    logger.info("[INFO] Setting webhook...")
+    app_bot.bot.set_webhook(WEBHOOK_URL)
+
+    # Run the bot
     app_bot.run_polling()
 
 
