@@ -1,12 +1,13 @@
+import requests
 import logging
 from flask import Flask, request, jsonify
 from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters
-import threading
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, CallbackContext
+import asyncio
 
 # ---- Configuration ----
 BOT_TOKEN = "7559019704:AAEgnG14Nkm-x4_9K3m4HXSitCSrd2RdsaE"
-WEBHOOK_URL = "https://your-render-url.onrender.com"  # Replace with your Render URL
+WEBHOOK_URL = "https://your-render-url.onrender.com"  # Replace with your Render app URL
 ADMIN_ID = 7618426591  # Admin's Telegram user ID
 GROUP_ID = -1002317604959  # Group ID to track new members
 
@@ -16,83 +17,44 @@ invite_links = {}
 # Configure Logging
 logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s",
-    level=logging.INFO,  # Use INFO for production, DEBUG for troubleshooting
+    level=logging.DEBUG,  # Set to DEBUG for detailed logging
 )
 logger = logging.getLogger("bot")
 
 # Flask app for webhook listener
 app = Flask(__name__)
 
-# ---- Flask Route: Health Check ----
-@app.route("/")
-def health_check():
-    """
-    Health check endpoint to confirm the webhook server is running.
-    """
-    logger.info("[INFO] Health check received.")
-    return "Webhook is running!", 200
-
-
-# ---- Flask Route: Register Invite Link ----
-@app.route("/register_invite", methods=["POST"])
-def register_invite():
-    """
-    Webhook endpoint to register invite links.
-    """
-    logger.info("[INFO] Received request on /register_invite endpoint.")
-    try:
-        data = request.get_json()
-        logger.info(f"[INFO] Received data for invite registration: {data}")
-
-        invite_link = data.get("invite_link")
-        if not invite_link or not invite_link.startswith("https://t.me/"):
-            logger.warning("[WARNING] Invalid invite link received.")
-            return jsonify({"error": "Invalid invite link"}), 400
-
-        if invite_link in invite_links:
-            logger.info(f"[INFO] Invite link already exists: {invite_link}")
-            return jsonify({"message": "Invite link already exists"}), 200
-
-        invite_links[invite_link] = False  # Mark as unused
-        logger.info(f"[INFO] Invite link registered: {invite_link}")
-        return jsonify({"status": "success", "message": "Invite link registered"}), 200
-
-    except Exception as e:
-        logger.error(f"[ERROR] Exception occurred in /register_invite: {e}", exc_info=True)
-        return jsonify({"error": str(e)}), 500
-
-
-# ---- Telegram Webhook Route ----
+# ---- Flask Route: Webhook Endpoint ----
 @app.route(f"/webhook/{BOT_TOKEN}", methods=["POST"])
-def telegram_webhook():
+def webhook():
     """
-    Endpoint for Telegram to send webhook updates.
+    Telegram webhook endpoint to receive updates.
     """
-    try:
-        update = Update.de_json(request.get_json(force=True), app_bot.bot)
-        app_bot.process_update(update)
-        return "OK", 200
-    except Exception as e:
-        logger.error(f"[ERROR] Failed to process update: {e}", exc_info=True)
-        return "Internal Server Error", 500
+    logger.debug("[DEBUG] Webhook endpoint triggered.")
+    data = request.get_json(force=True)
+    logger.debug(f"[DEBUG] Received webhook data: {data}")
+    app_bot.update_queue.put_nowait(Update.de_json(data, app_bot.bot))
+    return jsonify({"status": "success"}), 200
 
 
 # ---- Command: /start ----
-async def start(update: Update, context):
+async def start(update: Update, context: CallbackContext):
     """
-    Handle the /start command.
+    Handle the /start command to confirm the bot is running.
     """
+    logger.info("[INFO] /start command triggered.")
     await update.message.reply_text(
-        f"✅ Bot is running!\n"
+        "✅ Bot is running!\n"
         f"Registered Invite Links: {len(invite_links)}"
     )
 
 
 # ---- Command: /list_invites ----
-async def list_invites(update: Update, context):
+async def list_invites(update: Update, context: CallbackContext):
     """
     List all registered invite links.
     """
+    logger.debug("[DEBUG] /list_invites command triggered.")
     if not invite_links:
         await update.message.reply_text("ℹ️ No invite links registered.")
     else:
@@ -103,10 +65,11 @@ async def list_invites(update: Update, context):
 
 
 # ---- Command: /register_invite ----
-async def register_invite_command(update: Update, context):
+async def register_invite_command(update: Update, context: CallbackContext):
     """
     Command to register a new invite link manually.
     """
+    logger.debug("[DEBUG] /register_invite command triggered.")
     if len(context.args) < 1:
         await update.message.reply_text("❌ Usage: /register_invite <invite_link>")
         return
@@ -121,14 +84,17 @@ async def register_invite_command(update: Update, context):
     else:
         invite_links[invite_link] = False  # Mark as unused
         await update.message.reply_text(f"✅ Invite link registered: {invite_link}")
+        logger.info(f"[INFO] Invite link registered via /register_invite: {invite_link}")
 
 
 # ---- Handle New Members ----
-async def new_member(update: Update, context):
+async def new_member(update: Update, context: CallbackContext):
     """
     Handle new members joining the group.
     """
+    logger.debug("[DEBUG] Received update for new member.")
     if update.effective_chat.id != GROUP_ID:
+        logger.warning(f"[WARNING] Event from unauthorized group: {update.effective_chat.id}")
         return
 
     for member in update.message.new_chat_members:
@@ -136,27 +102,45 @@ async def new_member(update: Update, context):
         full_name = f"{member.first_name} {member.last_name or ''}".strip()
         user_id = member.id
 
-        # Find unused invite link
+        logger.info(f"[INFO] New Member: Name: {full_name}, Username: {username}, ID: {user_id}")
+
+        # Match Invite Link
         matched_invite = None
         for link, used in invite_links.items():
-            if not used:
+            if not used:  # Find the first unused invite link
                 matched_invite = link
                 invite_links[link] = True  # Mark as used
+                logger.info(f"[INFO] Invite link matched and marked as used: {matched_invite}")
                 break
 
         if not matched_invite:
+            logger.warning(f"[WARNING] No matching invite link found for {full_name} ({username}).")
             await context.bot.send_message(
                 chat_id=ADMIN_ID,
                 text=f"⚠️ New member joined without using a tracked invite link:\n"
                      f"Name: {full_name}\nUsername: {username}\nUser ID: {user_id}"
             )
-        else:
-            await context.bot.send_message(
-                chat_id=ADMIN_ID,
-                text=f"✅ New member joined:\n"
-                     f"Name: {full_name}\nUsername: {username}\nUser ID: {user_id}\n"
-                     f"Invite Link Used: {matched_invite}"
-            )
+            return
+
+        # Notify Admin
+        await context.bot.send_message(
+            chat_id=ADMIN_ID,
+            text=f"✅ New member joined:\n"
+                 f"Name: {full_name}\n"
+                 f"Username: {username}\n"
+                 f"User ID: {user_id}\n"
+                 f"Invite Link Used: {matched_invite}"
+        )
+
+
+# ---- Set Up Webhook ----
+async def setup_webhook(bot):
+    """
+    Asynchronous function to set the webhook for the bot.
+    """
+    webhook_url = f"{WEBHOOK_URL}/webhook/{BOT_TOKEN}"
+    await bot.set_webhook(webhook_url)
+    logger.info(f"[INFO] Webhook set: {webhook_url}")
 
 
 # ---- Main Function ----
@@ -173,10 +157,8 @@ def main():
     app_bot.add_handler(CommandHandler("register_invite", register_invite_command))
     app_bot.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, new_member))
 
-    # Set webhook
-    webhook_url = f"{WEBHOOK_URL}/webhook/{BOT_TOKEN}"
-    app_bot.bot.set_webhook(webhook_url)
-    logger.info(f"[INFO] Webhook set: {webhook_url}")
+    # Set webhook asynchronously
+    asyncio.run(setup_webhook(app_bot.bot))
 
     # Start Flask app
     app.run(host="0.0.0.0", port=5000)
