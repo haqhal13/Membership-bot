@@ -160,8 +160,9 @@ def main():
     # Set webhook asynchronously
     asyncio.run(setup_webhook(app_bot.bot))
 
-    # Start Flask app
-    app.run(host="0.0.0.0", port=5000)
+    # Start Flask app with production-ready WSGI server
+    from waitress import serve
+    serve(app, host="0.0.0.0", port=5000)
 
 
 if __name__ == "__main__":
