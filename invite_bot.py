@@ -7,10 +7,10 @@ from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, fil
 from waitress import serve
 
 # ---- Configuration ----
-BOT_TOKEN = "7559019704:AAEgnG14Nkm-x4_9K3m4HXSitCSrd2RdsaE"  # Replace with your bot token
-ADMIN_ID = 7618426591  # Replace with your admin's Telegram user ID
-GROUP_ID = -1002317604959  # Replace with your group ID
-WEBHOOK_URL = "https://your-webhook-url.onrender.com/webhook"  # Replace with your webhook URL
+BOT_TOKEN = "7559019704:AAEgnG14Nkm-x4_9K3m4HXSitCSrd2RdsaE"  # Your bot's token
+ADMIN_ID = 7618426591  # Your admin Telegram user ID
+GROUP_ID = -1002317604959  # Your group Telegram ID
+WEBHOOK_URL = f"https://webhook-ltcd.onrender.com/webhook/{BOT_TOKEN}"  # Your webhook URL
 
 # In-memory invite link storage
 invite_links = {}
@@ -18,7 +18,7 @@ invite_links = {}
 # Configure Logging
 logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s",
-    level=logging.DEBUG,  # Set to DEBUG for detailed logging
+    level=logging.DEBUG,  # Change to INFO in production
 )
 logger = logging.getLogger("bot")
 
@@ -35,7 +35,7 @@ def health_check():
     return "Webhook server is running!", 200
 
 # ---- Flask Route: Webhook for Telegram ----
-@app.route(f"/webhook", methods=["POST"])
+@app.route(f"/webhook/{BOT_TOKEN}", methods=["POST"])
 def webhook():
     """
     Endpoint to handle incoming updates from Telegram.
@@ -44,7 +44,6 @@ def webhook():
     if request.method == "POST":
         try:
             update_data = request.get_json()
-            logger.debug(f"[DEBUG] Incoming update: {update_data}")
             update = Update.de_json(update_data, app_bot.bot)
             asyncio.run(app_bot.process_update(update))
             return "OK", 200
@@ -52,31 +51,6 @@ def webhook():
             logger.error(f"[ERROR] Exception in webhook processing: {e}", exc_info=True)
             return jsonify({"error": "Webhook processing failed"}), 500
     return "Invalid request method", 405
-
-# ---- Flask Route: Register Invite Link ----
-@app.route("/register_invite", methods=["POST"])
-def register_invite():
-    """
-    Endpoint to register invite links.
-    """
-    try:
-        data = request.get_json()
-        invite_link = data.get("invite_link")
-        if not invite_link or not invite_link.startswith("https://t.me/"):
-            logger.warning("[WARNING] Invalid invite link received.")
-            return jsonify({"error": "Invalid invite link"}), 400
-
-        if invite_link in invite_links:
-            logger.info("[INFO] Invite link already exists.")
-            return jsonify({"message": "Invite link already exists"}), 200
-
-        invite_links[invite_link] = False  # Mark as unused
-        logger.info(f"[INFO] Invite link registered: {invite_link}")
-        return jsonify({"status": "success", "message": "Invite link registered"}), 200
-
-    except Exception as e:
-        logger.error(f"[ERROR] Exception in /register_invite: {e}", exc_info=True)
-        return jsonify({"error": str(e)}), 500
 
 # ---- Command: /start ----
 async def start(update: Update, context):
@@ -123,29 +97,30 @@ async def new_member(update: Update, context):
     """
     Handle new members joining the group.
     """
-    for member in update.message.new_chat_members:
-        username = f"@{member.username}" if member.username else "No Username"
-        full_name = f"{member.first_name} {member.last_name or ''}".strip()
-        user_id = member.id
+    if update.message.new_chat_members:
+        for member in update.message.new_chat_members:
+            username = f"@{member.username}" if member.username else "No Username"
+            full_name = f"{member.first_name} {member.last_name or ''}".strip()
+            user_id = member.id
 
-        # Match invite link
-        matched_invite = None
-        for link, used in invite_links.items():
-            if not used:
-                matched_invite = link
-                invite_links[link] = True
-                break
+            # Match invite link
+            matched_invite = None
+            for link, used in invite_links.items():
+                if not used:
+                    matched_invite = link
+                    invite_links[link] = True
+                    break
 
-        if matched_invite:
-            await context.bot.send_message(
-                chat_id=ADMIN_ID,
-                text=f"✅ New member joined:\nName: {full_name}\nUsername: {username}\nID: {user_id}\nInvite: {matched_invite}",
-            )
-        else:
-            await context.bot.send_message(
-                chat_id=ADMIN_ID,
-                text=f"⚠️ New member without invite:\nName: {full_name}\nUsername: {username}\nID: {user_id}",
-            )
+            if matched_invite:
+                await context.bot.send_message(
+                    chat_id=ADMIN_ID,
+                    text=f"✅ New member joined:\nName: {full_name}\nUsername: {username}\nID: {user_id}\nInvite: {matched_invite}",
+                )
+            else:
+                await context.bot.send_message(
+                    chat_id=ADMIN_ID,
+                    text=f"⚠️ New member without invite:\nName: {full_name}\nUsername: {username}\nID: {user_id}",
+                )
 
 # ---- Setup Webhook ----
 async def setup_webhook(bot):
