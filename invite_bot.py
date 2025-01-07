@@ -168,8 +168,8 @@ def main():
     """
     logger.info("[INFO] Starting the bot and webhook server...")
 
-    # Start Flask app on a different port
-    flask_thread = threading.Thread(target=lambda: app.run(port=5001))
+    # Start Flask app on port 5000
+    flask_thread = threading.Thread(target=lambda: app.run(host="0.0.0.0", port=5000))
     flask_thread.start()
 
     # Start Telegram bot
