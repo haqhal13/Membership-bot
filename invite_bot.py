@@ -10,7 +10,7 @@ from waitress import serve
 BOT_TOKEN = "7559019704:AAEgnG14Nkm-x4_9K3m4HXSitCSrd2RdsaE"  # Replace with your bot token
 ADMIN_ID = 7618426591  # Replace with your admin's Telegram user ID
 GROUP_ID = -1002317604959  # Replace with your group ID
-WEBHOOK_URL = f"https://webhook-ltcd.onrender.com/webhook/{BOT_TOKEN}"  # Replace with your Render URL
+WEBHOOK_URL = "https://your-webhook-url.onrender.com/webhook"  # Replace with your webhook URL
 
 # In-memory invite link storage
 invite_links = {}
@@ -18,7 +18,7 @@ invite_links = {}
 # Configure Logging
 logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s",
-    level=logging.DEBUG,  # Change to INFO in production
+    level=logging.DEBUG,  # Set to DEBUG for detailed logging
 )
 logger = logging.getLogger("bot")
 
@@ -34,9 +34,8 @@ def health_check():
     logger.info("[INFO] Health check received.")
     return "Webhook server is running!", 200
 
-
 # ---- Flask Route: Webhook for Telegram ----
-@app.route(f"/webhook/{BOT_TOKEN}", methods=["POST"])
+@app.route(f"/webhook", methods=["POST"])
 def webhook():
     """
     Endpoint to handle incoming updates from Telegram.
@@ -54,26 +53,19 @@ def webhook():
             return jsonify({"error": "Webhook processing failed"}), 500
     return "Invalid request method", 405
 
-
 # ---- Flask Route: Register Invite Link ----
 @app.route("/register_invite", methods=["POST"])
 def register_invite():
     """
     Endpoint to register invite links.
     """
-    logger.debug("[DEBUG] Received request on /register_invite endpoint.")
     try:
-        # Parse the incoming data
         data = request.get_json()
-        logger.info(f"[INFO] Received data for invite registration: {data}")
-
-        # Validate the invite link
         invite_link = data.get("invite_link")
         if not invite_link or not invite_link.startswith("https://t.me/"):
             logger.warning("[WARNING] Invalid invite link received.")
             return jsonify({"error": "Invalid invite link"}), 400
 
-        # Log invite link processing
         if invite_link in invite_links:
             logger.info("[INFO] Invite link already exists.")
             return jsonify({"message": "Invite link already exists"}), 200
@@ -86,14 +78,12 @@ def register_invite():
         logger.error(f"[ERROR] Exception in /register_invite: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
 
-
 # ---- Command: /start ----
 async def start(update: Update, context):
     """
     Handle the /start command.
     """
     await update.message.reply_text("✅ Bot is running!")
-
 
 # ---- Command: /list_invites ----
 async def list_invites(update: Update, context):
@@ -107,7 +97,6 @@ async def list_invites(update: Update, context):
             [f"{link} - {'Used' if used else 'Unused'}" for link, used in invite_links.items()]
         )
         await update.message.reply_text(f"📜 Registered Invite Links:\n{links_list}")
-
 
 # ---- Command: /register_invite ----
 async def register_invite_command(update: Update, context):
@@ -128,7 +117,6 @@ async def register_invite_command(update: Update, context):
     else:
         invite_links[invite_link] = False  # Mark as unused
         await update.message.reply_text(f"✅ Invite link registered: {invite_link}")
-
 
 # ---- Handle New Members ----
 async def new_member(update: Update, context):
@@ -159,12 +147,10 @@ async def new_member(update: Update, context):
                 text=f"⚠️ New member without invite:\nName: {full_name}\nUsername: {username}\nID: {user_id}",
             )
 
-
 # ---- Setup Webhook ----
 async def setup_webhook(bot):
     await bot.set_webhook(url=WEBHOOK_URL)
     logger.info(f"[INFO] Webhook set: {WEBHOOK_URL}")
-
 
 # ---- Main Function ----
 def main():
@@ -186,7 +172,6 @@ def main():
     # Serve Flask app with Waitress
     port = int(os.environ.get("PORT", 5000))
     serve(app, host="0.0.0.0", port=port)
-
 
 if __name__ == "__main__":
     main()
