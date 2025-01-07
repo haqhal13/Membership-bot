@@ -26,7 +26,7 @@ logger = logging.getLogger("bot")
 app = Flask(__name__)
 
 # ---- Flask Route: Health Check ----
-@app.route("/")
+@app.route("/", methods=["GET", "HEAD"])
 def health_check():
     """
     Health check endpoint to confirm the server is running.
@@ -42,11 +42,15 @@ def webhook():
     """
     logger.info("[INFO] Webhook called.")
     if request.method == "POST":
-        update = Update.de_json(request.get_json(), app_bot.bot)
-        asyncio.run(app_bot.process_update(update))
-        return "OK", 200
-    else:
-        return "Invalid request method", 405
+        try:
+            update_data = request.get_json()
+            update = Update.de_json(update_data, app_bot.bot)
+            asyncio.run(app_bot.process_update(update))
+            return "OK", 200
+        except Exception as e:
+            logger.error(f"[ERROR] Exception in webhook processing: {e}", exc_info=True)
+            return jsonify({"error": "Webhook processing failed"}), 500
+    return "Invalid request method", 405
 
 # ---- Flask Route: Register Invite Link ----
 @app.route("/register_invite", methods=["POST"])
