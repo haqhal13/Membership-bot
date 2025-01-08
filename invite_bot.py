@@ -1,124 +1,79 @@
 import os
-import sys
-from telegram import Update, ChatInviteLink
-from telegram.ext import (
-    ApplicationBuilder,
-    CommandHandler,
-    MessageHandler,
-    ContextTypes,
-    filters,
-)
-from datetime import datetime, timedelta
-import threading
-import time
+import logging
+from flask import Flask, request
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters
 
-# ---- Environment Variables ----
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_ID = os.getenv("ADMIN_ID")
-GROUP_ID = os.getenv("GROUP_ID")
+# ---- Configuration ----
+BOT_TOKEN = os.getenv("BOT_TOKEN", "your-bot-token")  # Replace with your bot token
+ADMIN_ID = int(os.getenv("ADMIN_ID", 123456789))  # Replace with your Telegram admin ID
+GROUP_ID = int(os.getenv("GROUP_ID", -1001234567890))  # Replace with your group ID
+WEBHOOK_URL = f"https://your-render-url/webhook/{BOT_TOKEN}"  # Replace with your Render app URL
 
-# Validate environment variables
-if not BOT_TOKEN:
-    sys.exit("Error: BOT_TOKEN is not set in environment variables.")
-if not ADMIN_ID:
-    sys.exit("Error: ADMIN_ID is not set in environment variables.")
-if not GROUP_ID:
-    sys.exit("Error: GROUP_ID is not set in environment variables.")
+# ---- Flask App ----
+app = Flask(__name__)
 
-# Convert environment variables to appropriate types
-ADMIN_ID = int(ADMIN_ID)
-GROUP_ID = int(GROUP_ID)
+# ---- Logging Configuration ----
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+logger = logging.getLogger("MembershipBot")
 
-# ---- Data Storage ----
-invite_links = {}  # To track invite links
-membership_expiry = {}  # To track membership expiry dates
+# ---- Telegram Bot Application ----
+application = ApplicationBuilder().token(BOT_TOKEN).build()
 
-# ---- Helper Functions ----
-async def notify_admin(context: ContextTypes.DEFAULT_TYPE, user_data: dict):
-    """Send member details to the admin."""
-    message = (
-        f"New Member Joined:\n"
-        f"Name: {user_data.get('name', 'N/A')}\n"
-        f"Username: @{user_data.get('username', 'N/A')}\n"
-        f"User ID: {user_data['id']}\n"
-        f"Invite Link: {user_data.get('invite_link', 'N/A')}"
-    )
+# ---- Bot Command Handlers ----
+async def start(update: Update, context):
+    """Handle the /start command."""
+    await update.message.reply_text("Hello! Your bot is running with webhooks!")
+
+async def ping(update: Update, context):
+    """Handle the /ping command."""
+    await update.message.reply_text("Pong!")
+
+async def notify_admin(update: Update, context):
+    """Notify the admin with a custom message."""
+    message = f"New message from @{update.effective_user.username}: {update.message.text}"
     await context.bot.send_message(chat_id=ADMIN_ID, text=message)
 
+# ---- Custom Message Handler ----
+async def handle_message(update: Update, context):
+    """Handle all other text messages."""
+    await update.message.reply_text(f"Hi {update.effective_user.first_name}, I received your message!")
 
-async def generate_invite_link(context: ContextTypes.DEFAULT_TYPE) -> ChatInviteLink:
-    """Generate and register a one-time invite link."""
-    bot = context.bot
-    link = await bot.create_chat_invite_link(
-        chat_id=GROUP_ID, expire_date=int((datetime.now() + timedelta(days=1)).timestamp())
-    )
-    invite_links[link.invite_link] = None
-    return link
+# ---- Add Handlers to the Bot ----
+application.add_handler(CommandHandler("start", start))
+application.add_handler(CommandHandler("ping", ping))
+application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
+# ---- Flask Webhook Endpoints ----
+@app.route(f"/webhook/{BOT_TOKEN}", methods=["POST"])
+def telegram_webhook():
+    """Handle incoming Telegram webhook updates."""
+    update = Update.de_json(request.get_json(force=True), application.bot)
+    application.process_update(update)
+    return "OK", 200
 
-def check_membership():
-    """Periodic check for membership expiry."""
-    while True:
-        now = datetime.now()
-        for user_id, expiry_date in list(membership_expiry.items()):
-            if now > expiry_date:
-                # Kick the user
-                try:
-                    application.bot.ban_chat_member(chat_id=GROUP_ID, user_id=user_id)
-                except Exception as e:
-                    print(f"Error kicking user {user_id}: {e}")
-                del membership_expiry[user_id]
-            elif now + timedelta(days=1) > expiry_date:
-                try:
-                    application.bot.send_message(
-                        chat_id=user_id,
-                        text="Your membership is about to expire. Please renew!",
-                    )
-                except Exception as e:
-                    print(f"Error notifying user {user_id}: {e}")
-        time.sleep(3600)  # Check every hour
+@app.route("/register_invite", methods=["POST"])
+def register_invite():
+    """Handle invite registration."""
+    data = request.get_json()
+    invite_link = data.get("invite_link")
+    if not invite_link:
+        return {"error": "Invalid invite link"}, 400
+    logger.info(f"Invite link registered: {invite_link}")
+    return {"status": "success", "invite_link": invite_link}, 200
 
-# ---- Command Handlers ----
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Start command handler."""
-    await update.message.reply_text("Welcome! Use /generate_invite to get a one-time invite link.")
-
-
-async def generate_invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Generate a one-time invite link."""
-    link = await generate_invite_link(context)
-    await update.message.reply_text(f"Here is your one-time invite link: {link.invite_link}")
-
-
-async def member_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle new member join events."""
-    new_members = update.message.new_chat_members
-    for member in new_members:
-        user_data = {
-            "name": member.full_name,
-            "username": member.username,
-            "id": member.id,
-            "invite_link": "Tracked from webhook",  # Fill this via webhook integration
-        }
-        await notify_admin(context, user_data)
-        membership_expiry[member.id] = datetime.now() + timedelta(days=28)
-
-# ---- Main Program ----
+# ---- Webhook Setup ----
 if __name__ == "__main__":
-    # Initialize the bot application
-    application = ApplicationBuilder().token(BOT_TOKEN).build()
-
-    # Add command handlers
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("generate_invite", generate_invite))
-
-    # Add event handler for new chat members
-    application.add_handler(
-        MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, member_join)
+    # Set Webhook on Startup
+    import requests
+    response = requests.post(
+        f"https://api.telegram.org/bot{BOT_TOKEN}/setWebhook",
+        json={"url": WEBHOOK_URL},
     )
+    if response.status_code == 200:
+        logger.info(f"Webhook successfully set to {WEBHOOK_URL}")
+    else:
+        logger.error(f"Failed to set webhook: {response.text}")
 
-    # Start a background thread to check membership expiry
-    threading.Thread(target=check_membership, daemon=True).start()
-
-    # Start the bot
-    application.run_polling()
+    # Run the Flask App
+    app.run(host="0.0.0.0", port=5000)
