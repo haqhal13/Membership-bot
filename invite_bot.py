@@ -8,7 +8,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, fil
 BOT_TOKEN = os.getenv("BOT_TOKEN", "your-bot-token")  # Replace with your bot token
 ADMIN_ID = int(os.getenv("ADMIN_ID", 123456789))  # Replace with your Telegram admin ID
 GROUP_ID = int(os.getenv("GROUP_ID", -1001234567890))  # Replace with your group ID
-WEBHOOK_URL = f"https://webhook-ltcd.onrender.com/{BOT_TOKEN}""  # Replace with your Render app URL
+WEBHOOK_URL = f"https://webhook-ltcd.onrender.com/{BOT_TOKEN}"  # Replace with your Render app URL
 
 # ---- Flask App ----
 app = Flask(__name__)
