@@ -61,9 +61,12 @@ application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_m
 @app.route(f"/webhook/{BOT_TOKEN}", methods=["POST"])
 def telegram_webhook():
     """Receive webhook updates from Telegram."""
-    update = Update.de_json(request.get_json(force=True), bot)
-    logger.info(f"Received update: {update}")
-    application.process_update(update)
+    try:
+        update = Update.de_json(request.get_json(force=True), bot)
+        logger.info(f"Received update: {update}")
+        application.process_update(update)
+    except Exception as e:
+        logger.error(f"Error processing update: {e}")
     return "OK", 200
 
 @app.route("/", methods=["GET"])
