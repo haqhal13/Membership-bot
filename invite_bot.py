@@ -44,6 +44,7 @@ def webhook():
     if request.method == "POST":
         try:
             update_data = request.get_json()
+            logger.debug(f"[DEBUG] Update received: {update_data}")
             update = Update.de_json(update_data, app_bot.bot)
             asyncio.run(app_bot.process_update(update))
             return "OK", 200
@@ -51,6 +52,31 @@ def webhook():
             logger.error(f"[ERROR] Exception in webhook processing: {e}", exc_info=True)
             return jsonify({"error": "Webhook processing failed"}), 500
     return "Invalid request method", 405
+
+# ---- Flask Route: Register Invite Link ----
+@app.route("/register_invite", methods=["POST"])
+def register_invite():
+    """
+    Endpoint to register invite links.
+    """
+    try:
+        data = request.get_json()
+        invite_link = data.get("invite_link")
+        if not invite_link or not invite_link.startswith("https://t.me/"):
+            logger.warning("[WARNING] Invalid invite link received.")
+            return jsonify({"error": "Invalid invite link"}), 400
+
+        if invite_link in invite_links:
+            logger.info("[INFO] Invite link already exists.")
+            return jsonify({"message": "Invite link already exists"}), 200
+
+        invite_links[invite_link] = False  # Mark as unused
+        logger.info(f"[INFO] Invite link registered: {invite_link}")
+        return jsonify({"status": "success", "message": "Invite link registered"}), 200
+
+    except Exception as e:
+        logger.error(f"[ERROR] Exception in /register_invite: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
 
 # ---- Command: /start ----
 async def start(update: Update, context):
