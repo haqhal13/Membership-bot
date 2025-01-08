@@ -1,7 +1,8 @@
 python-telegram-bot==20.5
 requests==2.31.0
-Flask==2.2.3  # Optional, for webhooks
+Flask==2.2.3
 gunicorn==20.1.0
-python-dotenv==1.0.0  # For .env management
-loguru==0.7.0  # For advanced logging
-schedule==1.2.0  # For periodic task scheduling
+python-dotenv==1.0.0
+loguru==0.7.0
+schedule==1.2.0
+Werkzeug==2.0.3
