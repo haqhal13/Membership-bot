@@ -1,21 +1,24 @@
-from telegram import Update, Bot, ChatInviteLink
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
-import requests
+import os
+from telegram import Update, ChatInviteLink
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    MessageHandler,
+    ContextTypes,
+    filters,
+)
 from datetime import datetime, timedelta
 import threading
 
 # ---- Configuration ----
-BOT_TOKEN = "7559019704:AAEgnG14Nkm-x4_9K3m4HXSitCSrd2RdsaE"
-ADMIN_ID = 7618426591
-GROUP_ID = -1002317604959
-WEBHOOK_URL_INFO = "https://hook.eu2.make.com/jj5f9zweffha9j8q2cfar2ri1s85bdar"
-
-# Local storage for invite link tracking (in-memory)
-invite_links = {}
-membership_expiry = {}
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+ADMIN_ID = int(os.getenv("ADMIN_ID"))  # Admin's Telegram user ID
+GROUP_ID = int(os.getenv("GROUP_ID"))  # Group ID to manage
+invite_links = {}  # To track invite links
+membership_expiry = {}  # To track membership expiry
 
 # ---- Helper Functions ----
-def notify_admin(bot: Bot, user_data: dict):
+async def notify_admin(context: ContextTypes.DEFAULT_TYPE, user_data: dict):
     """Send member details to admin."""
     message = (
         f"New Member Joined:\n"
@@ -24,13 +27,18 @@ def notify_admin(bot: Bot, user_data: dict):
         f"User ID: {user_data['id']}\n"
         f"Invite Link: {user_data.get('invite_link', 'N/A')}"
     )
-    bot.send_message(chat_id=ADMIN_ID, text=message)
+    await context.bot.send_message(chat_id=ADMIN_ID, text=message)
 
-def generate_invite_link(bot: Bot) -> ChatInviteLink:
+
+async def generate_invite_link(context: ContextTypes.DEFAULT_TYPE) -> ChatInviteLink:
     """Generate and register a one-time invite link."""
-    link = bot.create_chat_invite_link(chat_id=GROUP_ID, expire_date=int((datetime.now() + timedelta(days=1)).timestamp()))
+    bot = context.bot
+    link = await bot.create_chat_invite_link(
+        chat_id=GROUP_ID, expire_date=int((datetime.now() + timedelta(days=1)).timestamp())
+    )
     invite_links[link.invite_link] = None
     return link
+
 
 def check_membership():
     """Periodic check for membership expiry."""
@@ -38,54 +46,58 @@ def check_membership():
         now = datetime.now()
         for user_id, expiry_date in list(membership_expiry.items()):
             if now > expiry_date:
-                bot.kick_chat_member(chat_id=GROUP_ID, user_id=user_id)
+                application.bot.ban_chat_member(chat_id=GROUP_ID, user_id=user_id)
                 del membership_expiry[user_id]
             elif now + timedelta(days=1) > expiry_date:
-                bot.send_message(chat_id=user_id, text="Your membership is about to expire. Please renew!")
-        time.sleep(3600)
+                application.bot.send_message(
+                    chat_id=user_id,
+                    text="Your membership is about to expire. Please renew!",
+                )
+        time.sleep(3600)  # Check every hour
+
 
 # ---- Command Handlers ----
-def start(update: Update, context: CallbackContext):
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Start command handler."""
-    update.message.reply_text("Welcome! Use /generate_invite to get a one-time invite link.")
+    await update.message.reply_text("Welcome! Use /generate_invite to get a one-time invite link.")
 
-def generate_invite(update: Update, context: CallbackContext):
+
+async def generate_invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Generate a one-time invite link."""
-    bot = context.bot
-    link = generate_invite_link(bot)
-    update.message.reply_text(f"Here is your one-time invite link: {link.invite_link}")
+    link = await generate_invite_link(context)
+    await update.message.reply_text(f"Here is your one-time invite link: {link.invite_link}")
 
-def member_join(update: Update, context: CallbackContext):
+
+async def member_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle new member join events."""
-    bot = context.bot
     new_members = update.message.new_chat_members
     for member in new_members:
         user_data = {
             "name": member.full_name,
             "username": member.username,
             "id": member.id,
-            "invite_link": "Tracked from webhook"  # Fill this via webhook in Flow 2
+            "invite_link": "Tracked from webhook",  # Fill this via webhook in Flow 2
         }
-        notify_admin(bot, user_data)
+        await notify_admin(context, user_data)
         membership_expiry[member.id] = datetime.now() + timedelta(days=28)
 
+
 # ---- Main Program ----
-def main():
-    """Start the bot."""
-    updater = Updater(BOT_TOKEN, use_context=True)
-    dp = updater.dispatcher
+if __name__ == "__main__":
+    # Application Setup
+    application = ApplicationBuilder().token(BOT_TOKEN).build()
 
-    # Handlers
-    dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(CommandHandler("generate_invite", generate_invite))
-    dp.add_handler(MessageHandler(Filters.status_update.new_chat_members, member_join))
+    # Command Handlers
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("generate_invite", generate_invite))
 
-    # Start membership expiry thread
+    # Event Handlers
+    application.add_handler(
+        MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, member_join)
+    )
+
+    # Start Membership Expiry Thread
     threading.Thread(target=check_membership, daemon=True).start()
 
-    # Start polling
-    updater.start_polling()
-    updater.idle()
-
-if __name__ == "__main__":
-    main()
+    # Start the Bot
+    application.run_polling()
