@@ -27,12 +27,12 @@ bot = Bot(token=BOT_TOKEN)
 # ---- Command Handlers ----
 async def start(update: Update, context):
     """Handle the /start command."""
-    logger.info(f"Received /start command from {update.effective_user.username}")
+    logger.info(f"Triggered /start by {update.effective_user.username}")
     await update.message.reply_text("Welcome! The bot is running successfully!")
 
 async def ping(update: Update, context):
     """Handle the /ping command."""
-    logger.info(f"Received /ping command from {update.effective_user.username}")
+    logger.info(f"Triggered /ping by {update.effective_user.username}")
     await update.message.reply_text("Pong! The bot is alive.")
 
 async def notify_admin(update: Update, context):
@@ -62,8 +62,9 @@ application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_m
 def telegram_webhook():
     """Receive webhook updates from Telegram."""
     try:
-        update = Update.de_json(request.get_json(force=True), bot)
-        logger.info(f"Received update: {update}")
+        data = request.get_json()
+        logger.info(f"Webhook received data: {data}")
+        update = Update.de_json(data, bot)
         application.process_update(update)
     except Exception as e:
         logger.error(f"Error processing update: {e}")
