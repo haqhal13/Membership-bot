@@ -10,7 +10,7 @@ from waitress import serve
 BOT_TOKEN = "7559019704:AAEgnG14Nkm-x4_9K3m4HXSitCSrd2RdsaE"  # Replace with your bot token
 ADMIN_ID = 7618426591  # Replace with your admin's Telegram user ID
 GROUP_ID = -1002317604959  # Replace with your group ID
-WEBHOOK_URL = f"https://webhook-ltcd.onrender.com/webhook/{BOT_TOKEN}"  # Replace with your webhook URL
+WEBHOOK_URL = f"https://webhook-ltcd.onrender.com/webhook/{BOT_TOKEN}"  # Replace with your Render URL
 
 # In-memory invite link storage
 invite_links = {}
@@ -28,17 +28,22 @@ app = Flask(__name__)
 # ---- Flask Route: Health Check ----
 @app.route("/", methods=["GET", "HEAD"])
 def health_check():
+    """
+    Health check endpoint to confirm the server is running.
+    """
     logger.info("[INFO] Health check received.")
-    return "Bot webhook server is running!", 200
+    return "Webhook server is running!", 200
 
 # ---- Flask Route: Webhook for Telegram ----
 @app.route(f"/webhook/{BOT_TOKEN}", methods=["POST"])
 def webhook():
-    logger.info("[INFO] Webhook triggered.")
+    """
+    Endpoint to handle incoming updates from Telegram.
+    """
+    logger.info("[INFO] Webhook called.")
     if request.method == "POST":
         try:
             update_data = request.get_json()
-            logger.debug(f"[DEBUG] Update received: {update_data}")
             update = Update.de_json(update_data, app_bot.bot)
             asyncio.run(app_bot.process_update(update))
             return "OK", 200
@@ -49,10 +54,16 @@ def webhook():
 
 # ---- Command: /start ----
 async def start(update: Update, context):
-    await update.message.reply_text("✅ Bot is running and connected!")
+    """
+    Handle the /start command.
+    """
+    await update.message.reply_text("✅ Bot is running!")
 
 # ---- Command: /list_invites ----
 async def list_invites(update: Update, context):
+    """
+    Handle the /list_invites command.
+    """
     if not invite_links:
         await update.message.reply_text("ℹ️ No invite links registered.")
     else:
@@ -63,6 +74,9 @@ async def list_invites(update: Update, context):
 
 # ---- Command: /register_invite ----
 async def register_invite_command(update: Update, context):
+    """
+    Handle the /register_invite command.
+    """
     if len(context.args) < 1:
         await update.message.reply_text("❌ Usage: /register_invite <invite_link>")
         return
@@ -80,11 +94,15 @@ async def register_invite_command(update: Update, context):
 
 # ---- Handle New Members ----
 async def new_member(update: Update, context):
+    """
+    Handle new members joining the group.
+    """
     for member in update.message.new_chat_members:
         username = f"@{member.username}" if member.username else "No Username"
         full_name = f"{member.first_name} {member.last_name or ''}".strip()
         user_id = member.id
 
+        # Match invite link
         matched_invite = None
         for link, used in invite_links.items():
             if not used:
@@ -105,18 +123,18 @@ async def new_member(update: Update, context):
 
 # ---- Setup Webhook ----
 async def setup_webhook(bot):
-    try:
-        await bot.set_webhook(url=WEBHOOK_URL)
-        logger.info(f"[INFO] Webhook set successfully: {WEBHOOK_URL}")
-    except Exception as e:
-        logger.error(f"[ERROR] Failed to set webhook: {e}", exc_info=True)
+    await bot.set_webhook(url=WEBHOOK_URL)
+    logger.info(f"[INFO] Webhook set: {WEBHOOK_URL}")
 
 # ---- Main Function ----
 def main():
+    """
+    Main function to start the bot and webhook listener.
+    """
     global app_bot
     app_bot = ApplicationBuilder().token(BOT_TOKEN).build()
 
-    # Add command handlers
+    # Add handlers
     app_bot.add_handler(CommandHandler("start", start))
     app_bot.add_handler(CommandHandler("list_invites", list_invites))
     app_bot.add_handler(CommandHandler("register_invite", register_invite_command))
