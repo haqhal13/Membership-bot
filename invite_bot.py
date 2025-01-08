@@ -18,7 +18,7 @@ invite_links = {}
 # Configure Logging
 logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s",
-    level=logging.DEBUG,
+    level=logging.DEBUG,  # Set to DEBUG for detailed logs
 )
 logger = logging.getLogger("bot")
 
@@ -38,6 +38,7 @@ def webhook():
     if request.method == "POST":
         try:
             update_data = request.get_json()
+            logger.debug(f"[DEBUG] Update received: {update_data}")
             update = Update.de_json(update_data, app_bot.bot)
             asyncio.run(app_bot.process_update(update))
             return "OK", 200
@@ -49,7 +50,7 @@ def webhook():
 # ---- Command: /start ----
 async def start(update: Update, context):
     logger.info("[INFO] /start command received.")
-    await update.message.reply_text("✅ Bot is running!")
+    await update.message.reply_text("✅ Bot is running! Use /list_invites to view registered invite links.")
 
 # ---- Command: /list_invites ----
 async def list_invites(update: Update, context):
@@ -90,8 +91,12 @@ async def new_member(update: Update, context):
 
 # ---- Setup Webhook ----
 async def setup_webhook(bot):
-    await bot.set_webhook(url=WEBHOOK_URL)
-    logger.info(f"[INFO] Webhook set: {WEBHOOK_URL}")
+    logger.info("[INFO] Setting up webhook.")
+    try:
+        await bot.set_webhook(url=WEBHOOK_URL)
+        logger.info(f"[INFO] Webhook set: {WEBHOOK_URL}")
+    except Exception as e:
+        logger.error(f"[ERROR] Failed to set webhook: {e}", exc_info=True)
 
 # ---- Main Function ----
 def main():
@@ -103,7 +108,7 @@ def main():
     app_bot.add_handler(CommandHandler("list_invites", list_invites))
     app_bot.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, new_member))
 
-    # Set webhook
+    # Set webhook asynchronously
     asyncio.run(setup_webhook(app_bot.bot))
 
     # Serve Flask app with Waitress
