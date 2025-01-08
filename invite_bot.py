@@ -1,4 +1,5 @@
 import os
+import sys
 from telegram import Update, ChatInviteLink
 from telegram.ext import (
     ApplicationBuilder,
@@ -9,17 +10,32 @@ from telegram.ext import (
 )
 from datetime import datetime, timedelta
 import threading
+import time
 
-# ---- Configuration ----
+# ---- Environment Variables ----
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_ID = int(os.getenv("ADMIN_ID"))  # Admin's Telegram user ID
-GROUP_ID = int(os.getenv("GROUP_ID"))  # Group ID to manage
+ADMIN_ID = os.getenv("ADMIN_ID")
+GROUP_ID = os.getenv("GROUP_ID")
+
+# Validate environment variables
+if not BOT_TOKEN:
+    sys.exit("Error: BOT_TOKEN is not set in environment variables.")
+if not ADMIN_ID:
+    sys.exit("Error: ADMIN_ID is not set in environment variables.")
+if not GROUP_ID:
+    sys.exit("Error: GROUP_ID is not set in environment variables.")
+
+# Convert environment variables to appropriate types
+ADMIN_ID = int(ADMIN_ID)
+GROUP_ID = int(GROUP_ID)
+
+# ---- Data Storage ----
 invite_links = {}  # To track invite links
-membership_expiry = {}  # To track membership expiry
+membership_expiry = {}  # To track membership expiry dates
 
 # ---- Helper Functions ----
 async def notify_admin(context: ContextTypes.DEFAULT_TYPE, user_data: dict):
-    """Send member details to admin."""
+    """Send member details to the admin."""
     message = (
         f"New Member Joined:\n"
         f"Name: {user_data.get('name', 'N/A')}\n"
@@ -46,15 +62,21 @@ def check_membership():
         now = datetime.now()
         for user_id, expiry_date in list(membership_expiry.items()):
             if now > expiry_date:
-                application.bot.ban_chat_member(chat_id=GROUP_ID, user_id=user_id)
+                # Kick the user
+                try:
+                    application.bot.ban_chat_member(chat_id=GROUP_ID, user_id=user_id)
+                except Exception as e:
+                    print(f"Error kicking user {user_id}: {e}")
                 del membership_expiry[user_id]
             elif now + timedelta(days=1) > expiry_date:
-                application.bot.send_message(
-                    chat_id=user_id,
-                    text="Your membership is about to expire. Please renew!",
-                )
+                try:
+                    application.bot.send_message(
+                        chat_id=user_id,
+                        text="Your membership is about to expire. Please renew!",
+                    )
+                except Exception as e:
+                    print(f"Error notifying user {user_id}: {e}")
         time.sleep(3600)  # Check every hour
-
 
 # ---- Command Handlers ----
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -76,28 +98,27 @@ async def member_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "name": member.full_name,
             "username": member.username,
             "id": member.id,
-            "invite_link": "Tracked from webhook",  # Fill this via webhook in Flow 2
+            "invite_link": "Tracked from webhook",  # Fill this via webhook integration
         }
         await notify_admin(context, user_data)
         membership_expiry[member.id] = datetime.now() + timedelta(days=28)
 
-
 # ---- Main Program ----
 if __name__ == "__main__":
-    # Application Setup
+    # Initialize the bot application
     application = ApplicationBuilder().token(BOT_TOKEN).build()
 
-    # Command Handlers
+    # Add command handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("generate_invite", generate_invite))
 
-    # Event Handlers
+    # Add event handler for new chat members
     application.add_handler(
         MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, member_join)
     )
 
-    # Start Membership Expiry Thread
+    # Start a background thread to check membership expiry
     threading.Thread(target=check_membership, daemon=True).start()
 
-    # Start the Bot
+    # Start the bot
     application.run_polling()
