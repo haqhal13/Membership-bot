@@ -52,7 +52,7 @@ if __name__ == "__main__":
     dispatcher.add_handler(MessageHandler(Filters.status_update.new_chat_members, new_member))
     
     # Set webhook
-    webhook_url = f"https://<your-render-service-url>/{BOT_TOKEN}"
+    webhook_url = f"https://membership-bot-grng.onrender.com/{BOT_TOKEN}"
     bot.set_webhook(url=webhook_url)
     
     # Run Flask app
