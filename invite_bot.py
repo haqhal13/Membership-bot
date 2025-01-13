@@ -1,12 +1,17 @@
 from telegram import Update
-from telegram.ext import Updater, MessageHandler, Filters
+from telegram.ext import Updater, MessageHandler, Filters, Dispatcher
+from flask import Flask, request
+import os
 from datetime import datetime
 
 # Replace this with your bot token
-BOT_TOKEN = '7559019704:AAHLrqyyJvQS47_sxWSNyDRxAPCMBgjd_74'
+BOT_TOKEN = os.getenv("BOT_TOKEN", "7559019704:AAHLrqyyJvQS47_sxWSNyDRxAPCMBgjd_74")
 
 # Replace this with your admin's Telegram chat ID
-ADMIN_CHAT_ID = 7618426591
+ADMIN_CHAT_ID = os.getenv("ADMIN_CHAT_ID", "7618426591")
+
+# Flask app for webhook
+app = Flask(__name__)
 
 def new_member(update: Update, context):
     """Handles new chat members and notifies the admin."""
@@ -28,17 +33,27 @@ def new_member(update: Update, context):
         # Send a direct message (DM) to the admin
         context.bot.send_message(chat_id=ADMIN_CHAT_ID, text=notification_message)
 
-def main():
-    # Initialize the updater and dispatcher
-    updater = Updater(BOT_TOKEN, use_context=True)
-    dispatcher = updater.dispatcher
-    
-    # Add a handler for new members
-    dispatcher.add_handler(MessageHandler(Filters.status_update.new_chat_members, new_member))
-    
-    # Start polling
-    updater.start_polling()
-    updater.idle()
+@app.route(f"/{BOT_TOKEN}", methods=["POST"])
+def webhook():
+    """Handle incoming updates from Telegram."""
+    update = Update.de_json(request.get_json(force=True), bot)
+    dispatcher.process_update(update)
+    return "OK", 200
 
 if __name__ == "__main__":
-    main()
+    # Telegram bot setup
+    from telegram import Bot
+    from telegram.ext import Dispatcher
+
+    bot = Bot(token=BOT_TOKEN)
+    dispatcher = Dispatcher(bot, None, workers=0)
+    
+    # Add handler for new members
+    dispatcher.add_handler(MessageHandler(Filters.status_update.new_chat_members, new_member))
+    
+    # Set webhook
+    webhook_url = f"https://<your-render-service-url>/{BOT_TOKEN}"
+    bot.set_webhook(url=webhook_url)
+    
+    # Run Flask app
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8443)))
