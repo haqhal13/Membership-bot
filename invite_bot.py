@@ -50,6 +50,11 @@ def uptime():
     """Endpoint for uptime monitoring."""
     return "Bot is running!", 200
 
+@app.route("/", methods=["GET"])
+def root():
+    """Root endpoint for service health check."""
+    return "Service is live!", 200
+
 if __name__ == "__main__":
     # Telegram bot setup
     from telegram import Bot
