@@ -1,8 +1,1 @@
-python-telegram-bot==20.5
-requests==2.31.0
-Flask==2.2.5
-gunicorn==20.1.0
-python-dotenv==1.0.0
-loguru==0.7.0
-schedule==1.2.0
-Werkzeug==2.2.3
+pip install python-telegram-bot
