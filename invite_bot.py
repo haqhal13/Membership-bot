@@ -1,5 +1,5 @@
 from telegram import Update
-from telegram.ext import Updater, MessageHandler, Filters, Dispatcher
+from telegram.ext import Updater, MessageHandler, Filters
 from flask import Flask, request
 import os
 from datetime import datetime
@@ -10,11 +10,14 @@ BOT_TOKEN = os.getenv("BOT_TOKEN", "7559019704:AAHLrqyyJvQS47_sxWSNyDRxAPCMBgjd_
 # Replace this with your admin's Telegram chat ID
 ADMIN_CHAT_ID = os.getenv("ADMIN_CHAT_ID", "7618426591")
 
-# Flask app for webhook
+# Flask app for webhook and uptime monitoring
 app = Flask(__name__)
 
 def new_member(update: Update, context):
     """Handles new chat members and notifies the admin."""
+    group_name = update.message.chat.title  # Group name
+    group_id = update.message.chat.id       # Group ID
+    
     for member in update.message.new_chat_members:
         name = member.full_name
         username = member.username or "No username"
@@ -24,6 +27,8 @@ def new_member(update: Update, context):
         # Notification message for the admin
         notification_message = (
             f"🎉 A new member has joined the group!\n\n"
+            f"Group Name: {group_name}\n"
+            f"Group ID: {group_id}\n\n"
             f"Name: {name}\n"
             f"Username: @{username}\n"
             f"Telegram ID: {telegram_id}\n"
@@ -39,6 +44,11 @@ def webhook():
     update = Update.de_json(request.get_json(force=True), bot)
     dispatcher.process_update(update)
     return "OK", 200
+
+@app.route("/uptime", methods=["GET"])
+def uptime():
+    """Endpoint for uptime monitoring."""
+    return "Bot is running!", 200
 
 if __name__ == "__main__":
     # Telegram bot setup
